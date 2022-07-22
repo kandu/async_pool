@@ -1,0 +1,7 @@
+(library
+  (name async_pool)
+  (public_name async_pool)
+  (libraries async)
+  (flags (:standard -safe-string))
+  (preprocess
+    (pps ppx_let ppx_pipebang)))

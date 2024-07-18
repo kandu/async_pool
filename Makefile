@@ -16,3 +16,6 @@ clean:
 runtest:
 	dune runtest
 
+all-supported-ocaml-versions:
+	dune build @install @runtest --workspace dune-workspace.dev --root .
+

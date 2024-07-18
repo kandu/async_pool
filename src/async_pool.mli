@@ -18,11 +18,14 @@ type 'a t
 [interval] : if resource creation fails or the new created resource failed in [validate], Async_pool will wait for [interval] time before retry creating the resource. This prevent it from draining too much system resource.
 *)
 val create :
-  int ->
   ?validate:('a -> bool Deferred.t) ->
-  ?check:('a -> (bool -> unit Deferred.t) -> unit Deferred.t) ->
   ?dispose:('a -> unit Deferred.t) ->
-  ?interval:Core.Time.Span.t -> (unit -> 'a Deferred.t) -> 'a t
+  ?interval:Core.Time.Span.t ->
+  ?check: (bool -> unit Deferred.t) ->
+  int ->
+  Core.Time.Span.t ->
+  (unit -> 'a Deferred.t) ->
+  'a t
 
 (** [use p] f requests one free element of the pool [p] and gives it to the function [f]. The element is put back into the pool after the promise created by f completes. *)
 val use : 'a t -> ('a -> 'b Deferred.t) -> 'b Deferred.t

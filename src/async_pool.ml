@@ -8,18 +8,19 @@ module Arena = struct
     mutable count: int;
 
     dispose: 'a -> unit Deferred.t;
-    mutable release: 'a t -> 'a -> unit
+    mutable release: 'a t -> 'a -> unit Deferred.t
   }
 
   let release_normal t e=
-    match Queue.dequeue t.waiters with
+    (match Queue.dequeue t.waiters with
     | Some waiter-> Ivar.fill waiter e
-    | None-> Queue.enqueue t.elements e
+    | None-> Queue.enqueue t.elements e);
+    Deferred.unit
 
   let release_clear t e=
-    Option.iter
-      (Queue.dequeue t.waiters)
-      ~f:(fun waiter-> Ivar.fill waiter e)
+    match Queue.dequeue t.waiters with
+    | Some waiters-> Ivar.fill waiters e; Deferred.unit
+    | None-> t.dispose e
 
   let create dispose= {
     elements= Queue.create ();
@@ -97,22 +98,19 @@ let acquire t=
 
 let after_check t arena element= function
   | true->
-    arena.Arena.release arena element;
-    return ()
+    arena.Arena.release arena element
   | false->
     arena.Arena.dispose element >>= fun ()->
     arena.count <- arena.count - 1;
     let%bind element= create_element t in
-    arena.Arena.release arena element;
-    return ()
+    arena.Arena.release arena element
 
 let use t f=
   let arena= t.arena in
   let%bind element= acquire t in
   match%bind try_with (fun ()-> f element) with
   | Ok r->
-    arena.release arena element;
-    return r
+    arena.release arena element >>| fun ()-> r
   | Error exn->
     t.check element (after_check t arena element) >>= fun ()->
     raise exn
@@ -120,6 +118,7 @@ let use t f=
 
 let clear t=
   t.arena.release <- Arena.release_clear;
+  Queue.iter t.arena.elements ~f:(Fn.compose don't_wait_for t.arena.dispose);
   t.arena <- Arena.create t.arena.dispose
 
 let wait_queue_length t= Queue.length t.arena.waiters

@@ -1,3 +1,13 @@
+(*
+ * async_pool.mli
+ * -----------
+ * Copyright : (c) 2022 - 2024, ZAN DoYe <zandoye@gmail.com>
+ * Licence   : MIT
+ *
+ * This file is a part of async_pool.
+ *)
+
+
 open Core
 open Async
 

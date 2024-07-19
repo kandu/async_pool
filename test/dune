@@ -1,6 +1,7 @@
-(executable
+(library
   (name async_pool_test)
-  (libraries async_pool)
   (flags (:standard -safe-string))
+  (libraries async_pool)
+  (inline_tests (deps))
   (preprocess
-    (pps ppx_let ppx_pipebang)))
+    (pps ppx_let ppx_pipebang ppx_expect)))

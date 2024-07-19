@@ -2,16 +2,16 @@ open Core
 open Async
 
 module Arena = struct
-  type action=
+  type action_result=
     | Timeout
     | Cancel
 
-  type cancellable= {
+  type cancellable_action= {
     action: unit Deferred.t;
     cancel: unit Ivar.t;
   }
 
-  let dummy ()=
+  let action_dummy ()=
     let action= Deferred.unit
     and cancel= Ivar.create_full () in
     {
@@ -20,7 +20,7 @@ module Arena = struct
     }
 
 
-  let timeout time=
+  let action_timeout time=
     let action= after time
     and cancel= Ivar.create () in
     {
@@ -28,7 +28,7 @@ module Arena = struct
       cancel;
     }
 
-  let wait cancellable=
+  let wait_action cancellable=
     choose [
       choice cancellable.action (fun ()-> Timeout);
       choice (Ivar.read cancellable.cancel) (fun ()-> Cancel);
@@ -37,38 +37,40 @@ module Arena = struct
   type 'a element= {
     resource: 'a;
     mutable alive: bool;
-    mutable cancellable: cancellable;
+    mutable cancellable: cancellable_action;
   }
 
   type 'a t= {
-    elements: 'a element Queue.t;
-    waiters: 'a element Ivar.t Queue.t;
-    mutable count: int;
     capacity: int;
 
+    elements: 'a element Queue.t;
+    waiters: 'a element Ivar.t Queue.t;
+
+    mutable count: int;
+
+    interval: Core.Time.Span.t;
+    idle_limit: Core.Time.Span.t option;
 
     dispose: 'a -> unit Deferred.t;
     mutable release: 'a t -> 'a element-> unit Deferred.t;
-
-    idle_limit: Core.Time.Span.t;
-    interval: Core.Time.Span.t;
   }
 
   let reset_element t element=
-      element.cancellable<- timeout t.idle_limit;
+    Option.iter t.idle_limit ~f:(fun idle_limit->
+      element.cancellable<- action_timeout idle_limit;
       don't_wait_for
-        (match%bind wait element.cancellable with
+        (match%bind wait_action element.cancellable with
         | Timeout->
           element.alive <- false;
           t.dispose element.resource
-        | Cancel-> Deferred.unit)
+        | Cancel-> Deferred.unit))
 
   let use_element element=
     Ivar.fill_if_empty element.cancellable.cancel ()
 
-  let new_element t resource=
+  let new_element resource=
       let alive= true
-      and cancellable= dummy () in
+      and cancellable= action_dummy () in
       let element= {
         resource;
         alive;
@@ -112,10 +114,10 @@ type 'a t= {
 let create
   ?(validate= fun _-> return true)
   ?(dispose= fun _ -> return ())
-  ?(interval= sec 2.)
   ?check
+  ?(interval= sec 2.)
+  ?idle_limit
   capacity
-  idle_limit
   create
   =
   {
@@ -135,7 +137,7 @@ let rec create_element t=
   with
   | Ok resource->
     if%bind t.validate resource then
-      return (Arena.new_element t.arena resource)
+      return (Arena.new_element resource)
     else begin
       arena.dispose resource >>= fun ()->
       arena.count <- arena.count - 1;

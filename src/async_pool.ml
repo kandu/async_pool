@@ -72,6 +72,7 @@ module Arena = struct
         (match%bind wait_action element.cancellable with
         | Timeout->
           element.alive <- false;
+          t.count <- t.count - 1;
           t.dispose element.resource
         | Cancel-> Deferred.unit))
 
@@ -99,7 +100,9 @@ module Arena = struct
   let release_clear t e=
     match Queue.dequeue t.waiters with
     | Some waiters-> Ivar.fill waiters e; Deferred.unit
-    | None-> t.dispose e.resource
+    | None->
+      t.count <- t.count - 1;
+      t.dispose e.resource
 
   let create capacity dispose idle_limit interval= {
     elements= Queue.create ();
@@ -140,11 +143,9 @@ let create
 
 let rec create_element t=
   let arena= t.arena in
-  match%bind try_with (fun ()->
-    (* inc count before any other threads *)
-    arena.count <- arena.count + 1;
-    t.create ())
-  with
+  (* inc count before any other threads *)
+  arena.count <- arena.count + 1;
+  match%bind try_with (fun ()-> t.create ()) with
   | Ok resource->
     if%bind t.validate resource then
       return (Arena.new_element resource)
@@ -167,8 +168,7 @@ let rec acquire t=
       (Arena.use_element element;
       return element)
     else
-      (arena.count <- arena.count - 1;
-      acquire t)
+      acquire t
   | None->
     if arena.count < arena.capacity then
       create_element t
